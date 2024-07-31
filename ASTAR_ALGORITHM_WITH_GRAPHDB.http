@@ -1,0 +1,6 @@
+@ASTAR_ALGORITHM_WITH_GRAPHDB_HostAddress = http://localhost:5176
+
+GET {{ASTAR_ALGORITHM_WITH_GRAPHDB_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
