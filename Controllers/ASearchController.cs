@@ -11,7 +11,6 @@ namespace ASTAR_ALGORITHM_WITH_GRAPHDB.Controllers
     [ApiController]
     public class ASearchController : ControllerBase
     {
-
         private readonly IDriver _driver;
        
         private string uri = "bolt://localhost:7687";
@@ -19,7 +18,6 @@ namespace ASTAR_ALGORITHM_WITH_GRAPHDB.Controllers
         private string password = "pramesh@123";
         public ASearchController(IDriver driver)
         {
-
             _driver = GraphDatabase.Driver(uri, AuthTokens.Basic(user, password));
         }
 
@@ -27,46 +25,89 @@ namespace ASTAR_ALGORITHM_WITH_GRAPHDB.Controllers
 
         public async Task<IActionResult> GetAllLocation()
         {
-            string message = "hello pramesh";
             await using var session = _driver.AsyncSession();
 
+            var result = await session.RunAsync(
+                    "MATCH (location:Station) " +
+                    "RETURN id(location) as locationId, location.name as locationName, location.latitude as latitude, location.longitude as longitude"
+                );
 
+            var records = await result.ToListAsync();
+            var locations = new List<Location>();
 
-            var result = await session.RunAsync("MATCH (location :Station) RETURN location");
-
-            // Fetch all results into a list
-            var locations = await result.ToListAsync(record => record["location"].As<dynamic>());
-
-            // Print data in a list format
-            //Console.WriteLine("Locations in List Format:");
-            //foreach (var location in locations)
-            //{
-            //    Console.WriteLine(location.Id);
-            //    var l = location.Properties[1];
-            //    Console.WriteLine(location);
-            //}
-
-
+            foreach (var record in records)
+            {
+                var location = new Location
+                {
+                    LocationId = record["locationId"].As<long>(),
+                    LocationName = record["locationName"].As<string>(),
+                    Latitude = record["latitude"].As<double>(),
+                    Longitude = record["longitude"].As<double>()
+                };
+                locations.Add(location);
+            }
             return Ok(locations);
         }
 
-        
 
+
+        [HttpGet("GetAllConnection")]
+        public async Task<IActionResult> GetAllConnection()
+        {            
+            await using var session = _driver.AsyncSession();
+
+            var resultConnection = await session.RunAsync("MATCH (:Station) -[S:CONNECTION]-> (:Station) RETURN S");
+
+            var connectionRecords = await resultConnection.ToListAsync();
+
+            return Ok(connectionRecords);
+        }
 
         [HttpGet("GetPath")]
         public async Task<IActionResult> GetPath([FromQuery] string startLocation , string endLocation)
         {
-
             await using var session = _driver.AsyncSession();
 
-            var result = await session.RunAsync("MATCH (source:Station {name: 'Kings Cross'}), (target:Station {name: 'Kentish Town'})\r\nCALL gds.shortestPath.astar.stream('myGraph', {\r\n    sourceNode: source,\r\n    targetNode: target,\r\n    latitudeProperty: 'latitude',\r\n    longitudeProperty: 'longitude',\r\n    relationshipWeightProperty: 'distance'\r\n})\r\nYIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path\r\nRETURN\r\n    index,\r\n    gds.util.asNode(sourceNode).name AS sourceNodeName,\r\n    gds.util.asNode(targetNode).name AS targetNodeName,\r\n    totalCost,\r\n    [nodeId IN nodeIds | gds.util.asNode(nodeId).name] AS nodeNames,\r\n    costs,\r\n    nodes(path) as path\r\nORDER BY index");
+           
+
+            var result = await session.RunAsync(@"
+        MATCH (source:Station {name: $startLocation}), (target:Station {name: $endLocation})
+        CALL gds.shortestPath.astar.stream('myGraph', {
+            sourceNode: source,
+            targetNode: target,
+            latitudeProperty: 'latitude',
+            longitudeProperty: 'longitude',
+            relationshipWeightProperty: 'distance'
+        })
+        YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path
+        RETURN
+            index,
+            gds.util.asNode(sourceNode).name AS sourceNodeName,
+            gds.util.asNode(targetNode).name AS targetNodeName,
+            totalCost,
+            [nodeId IN nodeIds ] AS nodeNames,
+            costs,
+            nodes(path) as path
+        ORDER BY index", new { startLocation, endLocation });
+
+            var records = await result.ToListAsync();
 
 
             var locations = await result.ToListAsync(record => record["nodeNames"].As<dynamic>());
+
+            
 
             return Ok(locations);
         }
 
         
     }
+}
+
+public class Location
+{
+    public long LocationId { get; set; }
+    public string LocationName { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
 }
